@@ -33,12 +33,14 @@
 
 | # | 问题 | 发现方式 | 修正 | 证明测试 | Commit |
 |---|---|---|---|---|---|
-| R-1 | 上一轮 AI（ZCode）声称完成 Stage-1 六份文档，实际一份都没落盘 | 不看它的汇报，直接 `ls docs/` | 重做 Stage-1 | — | — |
-| R-2 | API key 明文在仓库根目录，而本次笔试要求 repo **public** | 核对群通知 + 检查根目录 | 遗留 key 文件由 `.gitignore` 排除；正式代码只读 `.env` / 环境变量；`.env.example` 只保留占位符 | `git check-ignore -v` + secret scan | — |
-| R-3 | AI 推荐的第一候选仓库 `niti007/...` 实际 **import 不了**（`state.py` 有 SyntaxError），且用的是 OpenAI 不是 Gemini | `python -m py_compile src/*.py` + `grep import` | 该仓库降级为不采用 | — | — |
-| R-4 | AI 称 `ntg2208/...` 有 SQLite 持久化 | 读 `graph.py` 源码 | 实际默认 `MemorySaver()`（纯内存），README 与实现不符，已记录 | — | — |
-| R-5 | `.env.example` 被误写入真实 key，仍会被 `git add .` 纳入 public repo | staged-file 安全审查 | 换成 `your_gemini_api_key_here`，再次按文件名扫描高风险凭证 | secret scan | — |
-| R-6 | 设计文档假设提供的凭证可直接用于 `google-genai`；真实 smoke test 返回 `401 ACCESS_TOKEN_TYPE_UNSUPPORTED` | 用官方 SDK 2.22.0 做一次最小分类调用 | 保持 FakeLLM 测试不阻塞；把真实凭证状态标为集成 blocker，等待确认 key 是否有效/绑定 Gemini API | live smoke test | — |
+| R-1 | 上一轮 AI（ZCode）声称完成 Stage-1 六份文档，实际一份都没落盘 | 不看它的汇报，直接 `ls docs/` | 重做 Stage-1 | — | `a5ea961` |
+| R-2 | API key 明文在仓库根目录，而本次笔试要求 repo **public** | 核对群通知 + 检查根目录 | 遗留 key 文件由 `.gitignore` 排除；正式代码只读 `.env` / 环境变量；`.env.example` 只保留占位符 | `git check-ignore -v` + secret scan | `a5ea961` |
+| R-3 | AI 推荐的第一候选仓库 `niti007/...` 实际 **import 不了**（`state.py` 有 SyntaxError），且用的是 OpenAI 不是 Gemini | `python -m py_compile src/*.py` + `grep import` | 该仓库降级为不采用 | — | `a5ea961` |
+| R-4 | AI 称 `ntg2208/...` 有 SQLite 持久化 | 读 `graph.py` 源码 | 实际默认 `MemorySaver()`（纯内存），README 与实现不符，已记录 | — | `a5ea961` |
+| R-5 | `.env.example` 被误写入真实 key，仍会被 `git add .` 纳入 public repo | staged-file 安全审查 | 换成 `your_gemini_api_key_here`，再次按文件名扫描高风险凭证 | secret scan | `a5ea961` |
+| R-6 | 设计文档假设提供的凭证可直接用于 `google-genai`；真实 smoke test 返回 `401 ACCESS_TOKEN_TYPE_UNSUPPORTED` | 用官方 SDK 2.22.0 做一次最小分类调用 | 保持 FakeLLM 测试不阻塞；把真实凭证状态标为集成 blocker，等待确认 key 是否有效/绑定 Gemini API | live smoke test | `d304d71` |
+| R-7 | Stage-1 建议「发送成功后记录额度」，忽略了发送与数据库提交无法原子化 | 实现前画失败时序：发送成功、DB commit 失败、下次重复发送 | 改为 SQLite 事务内先预留额度再发送；接受 transport 失败会损失一个窗口的 fail-closed 代价 | `test_concurrent_reservations_allow_exactly_one_send` | `d304d71` |
+| R-8 | 第一版 CLI 的 `admin reactivate` 也会先构造 Gemini client，无效 key 会阻塞人工恢复 | 逐入口执行审查 | 拆出无 LLM 依赖的 `OperatorService`，admin 子命令只构造 store + audit | `test_admin_reactivate_never_constructs_llm` | `d304d71` |
 | _(待补)_ | | | | | |
 
 ---
