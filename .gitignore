@@ -1,0 +1,81 @@
+# ============================================================
+#  KapibalaAI 获客初筛 Agent — .gitignore
+#
+#  ⛔ 重要：本次笔试要求所有 repo 设置为 PUBLIC（见 Problem.md 第 2 行）。
+#     API key 一旦进入首个 commit，即使之后删除文件，
+#     key 仍会永久留在 git 历史里，只能靠 rotate key 补救。
+#     执行 `git init` 之前必须先确认本文件生效：
+#         git check-ignore -v 实习笔试apikey.txt
+# ============================================================
+
+# ---- 凭证 / 密钥（最高优先级）----
+.env
+.env.*
+!.env.example
+*apikey*
+*api_key*
+*API_KEY*
+*.key
+*.pem
+credentials.json
+secrets.*
+
+# ---- 外部参考仓库：只用于阅读，不进入我们的仓库 ----
+# 理由见 docs/06_STAGE1_RECOMMENDATION.md 第三部分：
+#   1) 避免 upstream 的数百个 commit 淹没「两人都有实质提交」的协作证据
+#   2) 避免各自携带的 .git 变成嵌套仓库 / gitlink
+#   3) 我们只复用设计决定，不复制代码；读过哪个版本记录在 docs/02
+references/
+
+# 原始 AI 对话只作为本地工作上下文，不是交付物
+Conversation.md
+kGroup实习生笔试题-候选人版-2026-08-10.md
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+ENV/
+
+# ---- 测试 / 类型检查缓存 ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---- 运行时产物 ----
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+audit*.jsonl
+logs/
+*.log
+
+# ---- spike / 实验（明确标记为一次性，不入正式实现）----
+spikes/
+
+# ---- 编辑器 / 操作系统 ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
