@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KapibalaAI — 获客初筛 Agent</title>
+<!--
+  KapibalaAI 聊天前端（单文件，无构建步骤）
+  ============================================================================
+  后端边界（五条，必须守住，前端只是 CLI 的平替）：
+  1. 聊天框只调后端 AgentService.handle_customer_message()，禁止直调 LLM /
+     transport.send()。executor 是全进程唯一副作用出口。
+  2. 客户/人工入口分离：聊天框永远不能解锁 ESCALATED；下方独立 Admin 区调
+     OperatorService.reactivate()。不要在前端加“输入 /reactivate 解锁”的快捷逻辑。
+  3. GEMINI_API_KEY 只存在后端 .env，前端 JS 禁止出现 key。
+  4. 禁止流式输出：必须等后端完整回复（含 canary 出站检查）后再渲染，避免
+     被拦截的字先吐出去。
+  5. 禁止轮询/自动重试刷接口：60 秒滚动窗口每客户只发 1 条 reply，被限流会
+     降级为 schedule_followup，看起来像“没回”但其实是后端在守约束。
+
+  后端接线点：JS 里的 `API.chat` / `API.reactivate` 两个 fetch，默认走真实后端
+  （需先启动 `uv run kapibala-agent serve`，页面由同一后端同源 served）。
+-->
+<style>
+  /* ---------- 一、设计变量（后续统一调整只改这里） ---------- */
+  :root {
+    --paper: #ece4d3;            /* 主背景：做旧米黄 */
+    --paper-deep: #e8dfc9;       /* 深一档纸面：聊天区/卡片底 */
+    --paper-edge: #d5c9ae;       /* 边框：比背景深一档 */
+    --ink: #33302a;              /* 正文墨色 */
+    --ink-soft: #6b6558;         /* 次要文字 */
+    --brand: #4a5a45;            /* 深墨绿：标题栏/边框/回复气泡描边 */
+    --brand-deep: #3f4a3d;       /* 标题栏渐变深端 */
+    --sage: #8a9a7e;             /* 鼠尾草绿：辅助 */
+    --sage-wash: #dde0cd;        /* 模型回复卡片底（比背景略深的橄榄绿） */
+    --accent: #da7756;           /* 暗橙/陶土：点缀 */
+    --accent-deep: #c96442;      /* hover/链接 */
+    --user-card: #f4eee0;        /* 用户卡片底 */
+    --radius-window: 14px;
+    --radius-card: 10px;
+    --radius-pill: 999px;
+    --border: 1px solid var(--paper-edge);
+    --border-strong: 1px solid var(--brand);
+    --font-brand: "Copernicus", "Styrene Serif", "Source Serif Pro", "PT Serif", "Lora", Georgia, serif;
+    --font-body: Inter, "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --ease: 250ms ease;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    color: var(--ink);
+    background: #2e2b26; /* 衬出纸面窗口 */
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 28px 16px;
+  }
+
+  /* ---------- 二、桌面应用窗口 ---------- */
+  .app-window {
+    width: 880px;
+    max-width: 100%;
+    background: var(--paper);
+    border: 1px solid #b9ab8b;
+    border-radius: var(--radius-window);
+    box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 2px 0 rgba(255,255,255,.25) inset;
+    overflow: hidden;
+    position: relative;
+  }
+  /* 纸纹噪点 overlay：平贴纸面，不做悬浮阴影 */
+  .app-window::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    opacity: .5;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.42 0 0 0 0 0.36 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ---------- 三、深色标题栏 ---------- */
+  .titlebar {
+    background: linear-gradient(180deg, var(--brand) 0%, var(--brand-deep) 100%);
+    color: #efe9d8;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #2f382d;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-brand); font-size: 15px; letter-spacing: .04em; }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 8px;
+    border: 1px solid #d8cdb4; color: #f3e9d2;
+    display: grid; place-items: center;
+    font-size: 15px; font-style: italic;
+    background: rgba(255,255,255,.06);
+  }
+  .brand small { font-family: var(--font-mono); font-size: 10px; opacity: .75; letter-spacing: .12em; }
+  .win-icons { display: flex; gap: 14px; opacity: .85; }
+  .win-icons svg { width: 16px; height: 16px; stroke: #e9e1cb; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- 四、控制条 ---------- */
+  .controlbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: var(--border);
+    background: var(--paper);
+    position: relative; z-index: 2;
+  }
+  .model-picker { position: relative; }
+  .model-pill {
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+    background: var(--user-card);
+    border: var(--border); border-radius: var(--radius-pill);
+    padding: 8px 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    transition: border-color var(--ease);
+  }
+  .model-pill:hover { border-color: var(--sage); }
+  .model-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .model-menu {
+    position: absolute; top: calc(100% + 8px); left: 0; min-width: 260px;
+    background: var(--user-card); border: var(--border); border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(60,52,35,.18);
+    padding: 6px; z-index: 10;
+    opacity: 0; transform: translateY(-6px); pointer-events: none;
+    transition: opacity 220ms ease, transform 220ms ease;
+  }
+  .model-picker.open .model-menu { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .model-menu button {
+    width: 100%; text-align: left; background: transparent; border: 0; cursor: pointer;
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+    padding: 9px 10px; border-radius: 7px;
+  }
+  .model-menu button:hover { background: var(--sage-wash); }
+  .model-menu button.active { outline: 1px solid var(--sage); }
+  .icon-btn {
+    background: transparent; border: var(--border); border-radius: 9px;
+    width: 34px; height: 34px; display: grid; place-items: center; cursor: pointer;
+    transition: border-color var(--ease), transform var(--ease);
+  }
+  .icon-btn:hover { border-color: var(--accent); transform: scale(1.03); }
+  .icon-btn svg { width: 16px; height: 16px; stroke: var(--ink-soft); stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .cust-id { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+  .cust-id input {
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+    background: var(--user-card); border: var(--border); border-radius: 8px; padding: 7px 10px; width: 150px;
+  }
+
+  /* ---------- 五、聊天区（含水印） ---------- */
+  .chat {
+    position: relative;
+    min-height: 380px; max-height: 52vh; overflow-y: auto;
+    padding: 22px 22px 12px;
+    background: var(--paper-deep);
+    border-bottom: var(--border);
+  }
+  /* 指南针/曼陀罗水印：透明度约 7% */
+  .chat::before {
+    content: ""; position: absolute; inset: 0;
+    background: no-repeat center 40% / 420px 420px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' opacity='0.07'%3E%3Cg fill='none' stroke='%234a5a45' stroke-width='1.2'%3E%3Ccircle cx='100' cy='100' r='86'/%3E%3Ccircle cx='100' cy='100' r='64'/%3E%3Ccircle cx='100' cy='100' r='42'/%3E%3Ccircle cx='100' cy='100' r='20'/%3E%3Cpath d='M100 4v192M4 100h192M32 32l136 136M168 32L32 168'/%3E%3Crect x='70' y='70' width='60' height='60' transform='rotate(45 100 100)'/%3E%3C/g%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+  .msg { position: relative; z-index: 1; max-width: 78%; margin: 0 auto 14px 0; }
+  .msg.agent { margin: 0 0 14px auto; }
+  .card {
+    border: 1px solid var(--paper-edge);
+    border-radius: var(--radius-card);
+    padding: 12px 15px;
+    font-size: 14px; line-height: 1.65;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(74,90,69,.08);
+  }
+  .msg.user .card { background: var(--user-card); }
+  .msg.agent .card { background: var(--sage-wash); border-color: #b9c1a8; }
+  .meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; color: var(--ink-soft); margin: 0 2px 5px; }
+  .sys {
+    position: relative; z-index: 1;
+    max-width: 78%; margin: 0 auto 14px;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; color: var(--ink-soft);
+    border: 1px dashed #b9ab8b; border-radius: 9px;
+    background: rgba(244,238,224,.7);
+    padding: 9px 12px; text-align: center;
+  }
+  .sys.warn { border-color: var(--accent); color: #8a4a33; }
+  .empty-hint { position: relative; z-index: 1; text-align: center; color: var(--ink-soft); font-family: var(--font-brand); font-size: 14px; padding: 40px 0; }
+
+  /* ---------- 六、输入区 + Admin ---------- */
+  .composer {
+    display: flex; gap: 10px; align-items: center;
+    padding: 14px 16px 6px; background: var(--paper); position: relative; z-index: 2;
+  }
+  .composer input[type="text"] {
+    flex: 1; font-size: 14px; color: var(--ink);
+    background: #f6f1e3; border: var(--border); border-radius: 12px;
+    padding: 13px 15px; outline: none;
+    transition: border-color var(--ease), box-shadow var(--ease);
+  }
+  .composer input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(218,119,86,.15); }
+  .composer input[type="text"]::placeholder { color: #a39a83; }
+  .send {
+    border: 1px solid var(--brand-deep); border-radius: var(--radius-pill);
+    background: var(--brand); color: #f3ecda;
+    min-width: 52px; height: 46px; padding: 0 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px;
+    transition: transform var(--ease), background var(--ease), border-color var(--ease);
+  }
+  .send:hover { background: var(--accent); border-color: var(--accent-deep); transform: scale(1.02); }
+  .send:disabled { opacity: .55; cursor: wait; transform: none; }
+  .send svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .adminbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 10px 16px 16px; background: var(--paper); position: relative; z-index: 2;
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft);
+  }
+  .adminbar .sep { flex: 1; }
+  .ghost-btn {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--ink);
+    background: transparent; border: var(--border); border-radius: 8px;
+    padding: 8px 12px; cursor: pointer; transition: border-color var(--ease);
+  }
+  .ghost-btn:hover { border-color: var(--accent); }
+  a { color: var(--accent-deep); }
+
+  @media (max-width: 640px) {
+    body { padding: 12px 8px; }
+    .chat { padding: 16px 12px 8px; max-height: 60vh; }
+    .msg, .msg.agent, .sys { max-width: 94%; }
+    .cust-id input { width: 110px; }
+  }
+</style>
+</head>
+<body>
+  <main class="app-window" aria-label="KapibalaAI 桌面应用窗口">
+    <!-- 标题栏：装饰图标不需要可点 -->
+    <header class="titlebar">
+      <div class="brand">
+        <span class="brand-mark">K</span>
+        <span>KapibalaAI <small>LEAD&nbsp;AGENT</small></span>
+      </div>
+      <div class="win-icons" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M9 4h6v6l-1.5 7h-3L9 10V4z"/><path d="M12 4v13"/></svg>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </div>
+    </header>
+
+    <!-- 控制条 -->
+    <div class="controlbar">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="model-picker" id="picker">
+          <button class="model-pill" id="pill" aria-haspopup="listbox" aria-expanded="false">
+            <span class="dot"></span><span id="pillText">gemini-3.6-flash @ gemini</span><span aria-hidden="true">▾</span>
+          </button>
+          <div class="model-menu" id="menu" role="listbox">
+            <button data-m="gemini-3.6-flash @ gemini" class="active">gemini-3.6-flash @ gemini</button>
+            <button data-m="deepseek-chat @ my-api">deepseek-chat @ my-api</button>
+            <button data-m="fake-llm @ offline-demo">fake-llm @ offline-demo</button>
+          </div>
+        </div>
+        <label class="cust-id">customer
+          <input id="custId" value="demo-customer" spellcheck="false" />
+        </label>
+      </div>
+      <button class="icon-btn" id="clearBtn" title="只清空本页显示，不影响服务端状态">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>
+      </button>
+    </div>
+
+    <!-- 聊天区 -->
+    <section class="chat" id="chat" aria-live="polite">
+      <div class="empty-hint" id="emptyHint">在下方输入第一条客户消息。<br/>限流 / 转人工等系统事件会以虚线条显示。</div>
+    </section>
+
+    <!-- 输入区 -->
+    <form class="composer" id="form">
+      <input type="text" id="input" placeholder="about the page.." autocomplete="off" maxlength="2000" />
+      <button class="send" id="sendBtn" type="submit" title="发送">
+        <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </form>
+
+    <!-- 独立人工区：与聊天框分离，对应 OperatorService -->
+    <div class="adminbar">
+      <span>operator 区（独立入口，不解析客户文本里的 /reactivate）：</span>
+      <button class="ghost-btn" id="reactivateBtn" type="button">reactivate 当前 customer</button>
+      <span class="sep"></span>
+      <span id="statusLine">已连接后端（/api）</span>
+    </div>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+  /* 接线配置：真实后端（`uv run kapibala-agent serve` 同源 served）。
+     保留下方 mock 函数仅作离线版式参考，正常流程不再调用。 */
+  var USE_MOCK = false;
+  var API = {
+    chat: "/api/chat",                 // POST {customer_id, message} -> {executed_action,status,reason,customer_visible_text}
+    reactivate: "/api/admin/reactivate" // POST {customer_id} -> {status}
+  };
+
+  var chat = document.getElementById("chat");
+  var form = document.getElementById("form");
+  var input = document.getElementById("input");
+  var sendBtn = document.getElementById("sendBtn");
+  var emptyHint = document.getElementById("emptyHint");
+  var picker = document.getElementById("picker");
+  var pill = document.getElementById("pill");
+  var menu = document.getElementById("menu");
+  var pillText = document.getElementById("pillText");
+  var custId = document.getElementById("custId");
+  var clearBtn = document.getElementById("clearBtn");
+  var reactivateBtn = document.getElementById("reactivateBtn");
+  var statusLine = document.getElementById("statusLine");
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function scrollBottom() { chat.scrollTop = chat.scrollHeight; }
+  function removeHint() { if (emptyHint) { emptyHint.remove(); emptyHint = null; } }
+
+  function addUser(text) {
+    removeHint();
+    var d = document.createElement("div");
+    d.className = "msg user";
+    d.innerHTML = '<div class="meta">CUSTOMER</div><div class="card"></div>';
+    d.querySelector(".card").textContent = text;
+    chat.appendChild(d); scrollBottom();
+  }
+  function addAgent(text) {
+    var d = document.createElement("div");
+    d.className = "msg agent";
+    d.innerHTML = '<div class="meta">AGENT</div><div class="card"></div>';
+    d.querySelector(".card").textContent = text;
+    chat.appendChild(d); scrollBottom();
+  }
+  function addSys(text, warn) {
+    removeHint();
+    var d = document.createElement("div");
+    d.className = "sys" + (warn ? " warn" : "");
+    d.textContent = text;
+    chat.appendChild(d); scrollBottom();
+  }
+
+  /* 本地 mock：仅演示版式，不模拟任何后端约束 */
+  var mockN = 0;
+  function mockSend(message) {
+    mockN += 1;
+    if (mockN === 1) return { executed_action: "reply", status: "active", reason: "reply_sent", customer_visible_text: "您好！很高兴为您服务，请问今天有什么我可以帮您的？" };
+    if (mockN === 2) return { executed_action: "schedule_followup", status: "active", reason: "reply_rate_limited_followup_scheduled", customer_visible_text: null };
+    return { executed_action: null, status: "escalated", reason: "locked_session_silent", customer_visible_text: null };
+  }
+
+  function renderOutcome(o) {
+    if (o.customer_visible_text) { addAgent(o.customer_visible_text); return; }
+    if (o.executed_action && o.executed_action !== "reply") {
+      addSys("[system] action=" + o.executed_action + " state=" + o.status + " reason=" + o.reason);
+      return;
+    }
+    var warn = /rate_limited|denied|locked|escalat/i.test(o.reason || "");
+    var label = "[system] silent: " + (o.reason || "no-action") + " (state=" + (o.status || "?") + ")";
+    addSys(label, warn);
+  }
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var message = input.value.trim();
+    var cid = custId.value.trim() || "demo-customer";
+    if (!message || sendBtn.disabled) return;
+    addUser(message);
+    input.value = "";
+    sendBtn.disabled = true;
+    statusLine.textContent = "请求中…";
+
+    function done(o) {
+      renderOutcome(o);
+      sendBtn.disabled = false;
+      statusLine.textContent = "已连接后端";
+      input.focus();
+    }
+    function fail(msg) {
+      addSys("[system] 后端请求失败：" + msg + "（请确认已启动 uv run kapibala-agent serve）", true);
+      sendBtn.disabled = false;
+      statusLine.textContent = "后端请求失败";
+    }
+
+    if (USE_MOCK) { setTimeout(function () { done(mockSend(message)); }, 250); return; }
+    /* 真实后端：禁止前端重试/轮询；失败就展示失败，不自动补发 */
+    fetch(API.chat, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customer_id: cid, message: message })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(done).catch(function (e) { fail(e.message); });
+  });
+
+  reactivateBtn.addEventListener("click", function () {
+    var cid = custId.value.trim() || "demo-customer";
+    if (USE_MOCK) { mockN = 0; addSys("已重新激活 " + cid + "（mock：本地计数清零）"); return; }
+    fetch(API.reactivate, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customer_id: cid })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (o) {
+      addSys("已重新激活 " + cid + "，state=" + (o.status || "active"));
+    }).catch(function (e) {
+      addSys("[system] reactivate 失败：" + e.message, true);
+    });
+  });
+
+  clearBtn.addEventListener("click", function () {
+    chat.innerHTML = "";
+    emptyHint = document.createElement("div");
+    emptyHint.className = "empty-hint"; emptyHint.id = "emptyHint";
+    emptyHint.textContent = "已清空本页显示（服务端状态不受影响）。";
+    chat.appendChild(emptyHint);
+  });
+
+  /* 下拉：下滑 + 淡入（CSS transition），动效克制 */
+  pill.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var open = picker.classList.toggle("open");
+    pill.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  document.addEventListener("click", function () { picker.classList.remove("open"); });
+  menu.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    pillText.textContent = b.getAttribute("data-m");
+    menu.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+    b.classList.add("active");
+  });
+
+  input.focus();
+})();
+</script>
+</body>
+</html>

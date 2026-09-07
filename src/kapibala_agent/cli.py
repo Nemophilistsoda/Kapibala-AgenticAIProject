@@ -68,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     admin_subparsers = admin.add_subparsers(dest="admin_command", required=True)
     reactivate = admin_subparsers.add_parser("reactivate", help="重新激活会话")
     reactivate.add_argument("customer_id")
+    serve = subparsers.add_parser("serve", help="启动前端页面的本地后端")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
     return parser
 
 
@@ -84,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
         outcome = _build_operator_service().reactivate(args.customer_id)
         print(f"已重新激活 {args.customer_id}，state={outcome.status.value}")
         return 0
+    if args.command == "serve":
+        from .server import serve as _serve
+
+        return _serve(host=args.host, port=args.port)
     return 2
 
 

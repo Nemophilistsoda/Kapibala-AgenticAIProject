@@ -25,4 +25,3 @@ MVP 选择更安全的方向：SQLite `BEGIN IMMEDIATE` 内检查并预留发送
 2026-09-07 使用提供的凭证和官方 `google-genai` 2.22.0 调用 `gemini-2.5-flash`：服务端返回 `401 UNAUTHENTICATED / ACCESS_TOKEN_TYPE_UNSUPPORTED`。凭证值未写入新文件、日志或 Git。
 
 这意味着当前阻塞项是凭证有效性/绑定状态，而不是确定性代码。官方文档说明 `AQ.` auth key 是受支持格式，因此不能仅凭前缀判定错误；需要向凭证提供方确认该 key 是否仍有效并绑定 Gemini API。修复凭证后重新执行 live smoke test，才可把真实集成标记为完成。
-
