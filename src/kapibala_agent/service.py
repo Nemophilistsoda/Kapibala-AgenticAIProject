@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from threading import RLock
 
 from .audit import AuditEvent, AuditSink
@@ -27,17 +26,48 @@ class AgentService:
         self._executor = executor
         self._audit = audit
         self._escalation_threshold = escalation_threshold
-        self._locks_guard = RLock()
-        self._customer_locks: defaultdict[str, RLock] = defaultdict(RLock)
+        # 固定 64 把锁分片：内存有上限，不随 customer_id 增长；
+        # 同一客户永远落在同一片，单客户互斥语义不变，不同客户偶尔同片只是多等一下。
+        self._lock_stripes: list[RLock] = [RLock() for _ in range(64)]
+        # 已处理消息的幂等表（进程内）：(customer_id, message_id) -> 上次 Outcome。
+        # 有界 FIFO，满 1024 条丢最旧；注意失败结果也会被记住，
+        # 客户端遇到失败想重试请换一个新的 message_id。
+        self._seen_guard = RLock()
+        self._seen: dict[tuple[str, str], Outcome] = {}
+        self._seen_limit = 1024
 
     def _lock_for(self, customer_id: str) -> RLock:
-        with self._locks_guard:
-            return self._customer_locks[customer_id]
+        return self._lock_stripes[hash(customer_id) % len(self._lock_stripes)]
 
-    def handle_customer_message(self, customer_id: str, message: str) -> Outcome:
+    def handle_customer_message(
+        self, customer_id: str, message: str, *, message_id: str | None = None
+    ) -> Outcome:
         if not customer_id.strip() or not message.strip():
             raise ValueError("customer_id and message must be non-empty")
+        if message_id is not None:
+            if not message_id.strip():
+                raise ValueError("message_id must be non-empty when provided")
+            with self._seen_guard:
+                cached = self._seen.get((customer_id, message_id))
+            if cached is not None:
+                self._audit.write(
+                    AuditEvent(
+                        customer_id,
+                        "duplicate",
+                        "duplicate_message_id_suppressed",
+                        status=cached.status.value,
+                    )
+                )
+                return cached
+        outcome = self._handle_uncached(customer_id, message)
+        if message_id is not None:
+            with self._seen_guard:
+                if len(self._seen) >= self._seen_limit:
+                    self._seen.pop(next(iter(self._seen)))
+                self._seen[(customer_id, message_id)] = outcome
+        return outcome
 
+    def _handle_uncached(self, customer_id: str, message: str) -> Outcome:
         with self._lock_for(customer_id):
             current = self._store.get(customer_id)
             if current.status is not SessionStatus.ACTIVE:

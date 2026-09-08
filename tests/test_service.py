@@ -93,3 +93,56 @@ def test_customer_cannot_reactivate_but_operator_can(make_service) -> None:
     resumed = service.handle_customer_message("c1", "继续聊")
     assert resumed.executed_action is Action.REPLY
     assert transport.messages == [("c1", "已恢复")]
+
+
+def test_mark_not_interested_closes_and_stays_silent_until_operator_reopens(
+    make_service,
+) -> None:
+    llm = FakeLLM(
+        [
+            p(Intent.REJECTED, action=Action.MARK_NOT_INTERESTED),
+            p(Intent.INTERESTED),
+        ],
+        drafts=["欢迎回来"],
+    )
+    service, store, transport, audit = make_service(llm)
+    closed = service.handle_customer_message("c1", "不用了，谢谢")
+    assert closed.executed_action is Action.MARK_NOT_INTERESTED
+    assert store.get("c1").status is SessionStatus.CLOSED
+    assert transport.messages == []
+
+    silent = service.handle_customer_message("c1", "其实我又有兴趣了")
+    assert silent.executed_action is None
+    assert silent.reason == "locked_session_silent"
+    assert llm.classify_calls == 1
+
+    OperatorService(store, audit=audit).reactivate("c1")
+    resumed = service.handle_customer_message("c1", "继续聊")
+    assert resumed.executed_action is Action.REPLY
+    assert transport.messages == [("c1", "欢迎回来")]
+
+
+def test_duplicate_message_id_returns_cached_outcome_without_recounting(
+    make_service,
+) -> None:
+    llm = FakeLLM(
+        [
+            p(Intent.IRRELEVANT, action=Action.SCHEDULE_FOLLOWUP),
+            p(Intent.IRRELEVANT, action=Action.SCHEDULE_FOLLOWUP),
+        ]
+    )
+    service, store, transport, audit = make_service(llm)
+    first = service.handle_customer_message("c1", "天气怎么样？", message_id="m-1")
+    assert first.executed_action is Action.SCHEDULE_FOLLOWUP
+
+    second = service.handle_customer_message("c1", "天气怎么样？", message_id="m-1")
+    assert second == first
+    assert llm.classify_calls == 1
+    assert store.get("c1").anomaly_count == 1
+    assert transport.messages == []
+    assert audit.events[-1].event == "duplicate"
+
+    third = service.handle_customer_message("c1", "天气怎么样？", message_id="m-2")
+    assert third.executed_action is Action.ESCALATE_TO_HUMAN
+    assert llm.classify_calls == 2
+    assert store.get("c1").status is SessionStatus.ESCALATED

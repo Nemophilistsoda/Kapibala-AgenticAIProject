@@ -24,3 +24,46 @@ def test_wire_json_is_validated_again_locally() -> None:
 def test_malformed_or_relaxed_wire_json_fails_closed(payload: str) -> None:
     with pytest.raises(LLMError):
         GeminiLLM._parse_perception(payload)
+
+
+def test_attempt_retries_only_retryable_errors() -> None:
+    llm = GeminiLLM(api_key="unit-test-key")
+
+    class StatusError(Exception):
+        def __init__(self, status_code: int) -> None:
+            super().__init__(f"provider {status_code}")
+            self.status_code = status_code
+
+    calls_400 = 0
+
+    def fail_400() -> object:
+        nonlocal calls_400
+        calls_400 += 1
+        raise StatusError(400)
+
+    with pytest.raises(LLMError):
+        llm._attempt(fail_400)
+    assert calls_400 == 1
+
+    flaky_calls = 0
+
+    def flaky_429() -> object:
+        nonlocal flaky_calls
+        flaky_calls += 1
+        if flaky_calls < 3:
+            raise StatusError(429)
+        return "ok"
+
+    assert llm._attempt(flaky_429) == "ok"
+    assert flaky_calls == 3
+
+    plain_calls = 0
+
+    def fail_plain() -> object:
+        nonlocal plain_calls
+        plain_calls += 1
+        raise RuntimeError("network down")
+
+    with pytest.raises(LLMError):
+        llm._attempt(fail_plain)
+    assert plain_calls == 3

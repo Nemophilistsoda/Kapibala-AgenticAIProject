@@ -126,8 +126,19 @@ class _Handler(BaseHTTPRequestHandler):
                 if len(message) > MAX_MESSAGE_CHARS:
                     self._send_json(400, {"error": "message too long"})
                     return
+                raw_message_id = data.get("message_id")
+                message_id: str | None = None
+                if raw_message_id is not None:
+                    message_id = str(raw_message_id).strip()
+                    if not message_id:
+                        self._send_json(
+                            400, {"error": "message_id must be non-empty when provided"}
+                        )
+                        return
                 service: AgentService = self.server.customer_service  # type: ignore[attr-defined]
-                outcome = service.handle_customer_message(customer_id, message)
+                outcome = service.handle_customer_message(
+                    customer_id, message, message_id=message_id
+                )
                 self._send_json(200, _outcome_payload(outcome))
                 return
             if self.path == "/api/admin/reactivate":
