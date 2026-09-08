@@ -18,7 +18,8 @@ class AuditEvent:
     proposed_action: str | None = None
     executed_action: str | None = None
     status: str | None = None
-    timestamp: float = 0.0
+    forced: bool | None = None
+    timestamp: float | None = None
 
 
 class AuditSink(Protocol):
@@ -32,7 +33,7 @@ class JsonlAuditSink:
 
     def write(self, event: AuditEvent) -> None:
         payload = asdict(event)
-        if not payload["timestamp"]:
+        if payload["timestamp"] is None:
             payload["timestamp"] = time()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock, self.path.open("a", encoding="utf-8") as handle:

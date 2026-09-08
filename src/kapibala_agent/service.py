@@ -146,6 +146,7 @@ class AgentService:
                         outcome.executed_action.value if outcome.executed_action else None
                     ),
                     status=outcome.status.value,
+                    forced=planned.forced,
                 )
             )
             return outcome
