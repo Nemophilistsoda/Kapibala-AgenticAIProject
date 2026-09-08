@@ -59,14 +59,17 @@ def _frontend_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "frontend"
 
 
-def _outcome_payload(outcome: Any) -> dict[str, Any]:
+def _outcome_payload(outcome: Any, anomaly_count: int | None = None) -> dict[str, Any]:
     action = getattr(outcome, "executed_action", None)
-    return {
+    payload: dict[str, Any] = {
         "executed_action": action.value if action is not None else None,
         "status": outcome.status.value,
         "reason": outcome.reason,
         "customer_visible_text": outcome.customer_visible_text,
     }
+    if anomaly_count is not None:
+        payload["anomaly_count"] = anomaly_count
+    return payload
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -139,7 +142,8 @@ class _Handler(BaseHTTPRequestHandler):
                 outcome = service.handle_customer_message(
                     customer_id, message, message_id=message_id
                 )
-                self._send_json(200, _outcome_payload(outcome))
+                session = service.get_session(customer_id)
+                self._send_json(200, _outcome_payload(outcome, session.anomaly_count))
                 return
             if self.path == "/api/admin/reactivate":
                 data = self._read_json()
@@ -149,7 +153,8 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 operator: OperatorService = self.server.operator_service  # type: ignore[attr-defined]
                 outcome = operator.reactivate(customer_id)
-                self._send_json(200, _outcome_payload(outcome))
+                # reactivate 语义上必然把计数器清零，直接回 0 即真实值。
+                self._send_json(200, _outcome_payload(outcome, 0))
                 return
             self._send_json(404, {"error": "not found"})
         except ValueError as exc:

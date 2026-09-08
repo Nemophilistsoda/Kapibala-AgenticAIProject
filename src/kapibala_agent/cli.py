@@ -57,6 +57,11 @@ def _chat(service: AgentService, customer_id: str) -> int:
                 f"[system] action={outcome.executed_action.value} "
                 f"state={outcome.status.value} reason={outcome.reason}"
             )
+        session = service.get_session(customer_id)
+        print(
+            f"[debug] anomaly_count={session.anomaly_count} "
+            f"state={session.status.value}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

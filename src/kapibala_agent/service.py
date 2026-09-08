@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import RLock
 
 from .audit import AuditEvent, AuditSink
-from .domain import Action, Outcome, SessionStatus
+from .domain import Action, Outcome, Session, SessionStatus
 from .executor import Executor
 from .llm import LLMClient
 from .policy import clamp_action
@@ -38,6 +38,10 @@ class AgentService:
 
     def _lock_for(self, customer_id: str) -> RLock:
         return self._lock_stripes[hash(customer_id) % len(self._lock_stripes)]
+
+    def get_session(self, customer_id: str) -> Session:
+        """Read-only session view for debug/operator surfaces; never mutates."""
+        return self._store.get(customer_id)
 
     def handle_customer_message(
         self, customer_id: str, message: str, *, message_id: str | None = None
