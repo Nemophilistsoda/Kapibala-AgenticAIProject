@@ -173,7 +173,9 @@ class GeminiLLM:
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
                     temperature=0.3,
-                    max_output_tokens=1024,
+                    # 客户可能要求 1000-2000 字回复，中文约 1.5-2 token/字，
+                    # 2048 仍会截断成 MAX_TOKENS；4096 覆盖最坏情况。
+                    max_output_tokens=4096,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),
             )

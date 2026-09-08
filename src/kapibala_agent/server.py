@@ -66,6 +66,7 @@ def _outcome_payload(outcome: Any, anomaly_count: int | None = None) -> dict[str
         "status": outcome.status.value,
         "reason": outcome.reason,
         "customer_visible_text": outcome.customer_visible_text,
+        "detail": getattr(outcome, "detail", None),
     }
     if anomaly_count is not None:
         payload["anomaly_count"] = anomaly_count

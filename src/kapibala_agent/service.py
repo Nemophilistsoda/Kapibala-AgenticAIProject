@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from threading import RLock
 
 from .audit import AuditEvent, AuditSink
@@ -89,12 +90,21 @@ class AgentService:
             try:
                 perception = self._llm.classify(message)
             except Exception as exc:
-                outcome = Outcome(customer_id, current.status, None, "llm_classification_failed")
+                # 降级保底：分类失败时不猜意图、不改状态、不发送，只执行
+                # 最保守的内部动作 schedule_followup（题目语义"本轮不回复"，
+                # 不消耗 60 秒发送额度）。计数器原样保留——既不加也不清零，
+                # 状态机未被绕过（没有走 transition）。
+                outcome = Outcome(
+                    customer_id,
+                    current.status,
+                    Action.SCHEDULE_FOLLOWUP,
+                    "llm_classification_failed_fallback",
+                )
                 self._audit.write(
                     AuditEvent(
                         customer_id,
                         "llm_failure",
-                        f"{outcome.reason}:{type(exc).__name__}",
+                        f"llm_classification_failed:{type(exc).__name__}",
                         status=current.status.value,
                     )
                 )
@@ -138,6 +148,9 @@ class AgentService:
                 planned.action,
                 draft_reply=draft_reply,
             )
+            # 把状态机触发路径（计数器强制 / 模型建议）带给调用方，
+            # 让前端和审计都能区分"这次为什么转人工"。
+            outcome = replace(outcome, detail=planned.reason)
             self._audit.write(
                 AuditEvent(
                     customer_id,

@@ -32,6 +32,7 @@ def test_second_anomaly_suppresses_reply_and_locks_future_messages(make_service)
 
     assert first.executed_action is Action.SCHEDULE_FOLLOWUP
     assert second.executed_action is Action.ESCALATE_TO_HUMAN
+    assert second.detail == "two_consecutive_anomalies"  # 计数器强制，非模型建议
     assert third.executed_action is None
     assert third.reason == "locked_session_silent"
     assert llm.classify_calls == 2
@@ -62,14 +63,17 @@ def test_canary_is_blocked_before_transport(make_service) -> None:
     assert transport.messages == []
 
 
-def test_llm_failure_is_fail_closed_and_preserves_counter(make_service) -> None:
+def test_llm_failure_degrades_to_followup_and_preserves_counter(make_service) -> None:
     llm = FakeLLM([p(Intent.IRRELEVANT, action=Action.SCHEDULE_FOLLOWUP), LLMError("timeout")])
     service, store, transport, audit = make_service(llm)
     service.handle_customer_message("c1", "无关内容")
     outcome = service.handle_customer_message("c1", "触发模型失败")
-    assert outcome.executed_action is None
-    assert store.get("c1").anomaly_count == 1
-    assert transport.messages == []
+    assert outcome.executed_action is Action.SCHEDULE_FOLLOWUP
+    assert outcome.reason == "llm_classification_failed_fallback"
+    assert store.get("c1").anomaly_count == 1  # 失败既不加也不清零
+    assert store.get("c1").status is SessionStatus.ACTIVE
+    assert transport.messages == []  # 失败绝不发送
+    assert audit.events[-1].event == "llm_failure"  # 审计记录真实原因
 
 
 def test_customer_cannot_reactivate_but_operator_can(make_service) -> None:
@@ -92,6 +96,7 @@ def test_customer_cannot_reactivate_but_operator_can(make_service) -> None:
     assert store.get("c1").anomaly_count == 0
     resumed = service.handle_customer_message("c1", "继续聊")
     assert resumed.executed_action is Action.REPLY
+    assert resumed.detail == "model_action_accepted"  # 正常路径可区分于强制升级
     assert transport.messages == [("c1", "已恢复")]
 
 

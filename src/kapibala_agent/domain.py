@@ -63,3 +63,4 @@ class Outcome:
     executed_action: Action | None
     reason: str
     customer_visible_text: str | None = None
+    detail: str | None = None  # 状态机触发路径：two_consecutive_anomalies / model_action_accepted
