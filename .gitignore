@@ -70,6 +70,12 @@ logs/
 # ---- spike / 实验（明确标记为一次性，不入正式实现）----
 spikes/
 
+# ---- 本地设计文档：只留本地磁盘，不再进入 GitHub ----
+# 2026-09-08 起 docs/ 与 COLLAB.md 仅本地可见（已 git rm --cached 摘除索引）。
+# 如需恢复入库：git add -f docs COLLAB.md
+docs/
+COLLAB.md
+
 # ---- 编辑器 / 操作系统 ----
 .vscode/
 .idea/
