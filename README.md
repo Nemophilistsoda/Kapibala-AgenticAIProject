@@ -44,14 +44,29 @@ uv run pytest -q
 
 所有测试默认使用 `FakeLLM` 与可注入时钟，不需要网络或 API key。
 
+## 方案选择：为什么直连 SDK 而不用 Agent 框架
+
+**选型**：Google 官方 `google-genai` SDK 直连 + Pydantic 严格校验 + 手写状态机 / policy / executor / SQLite。未使用 LangChain、LangGraph、AutoGen、Google ADK 等任何 Agent 框架。
+
+为什么选这个方案：
+
+1. **四条硬约束没有一条是框架能替我们满足的。** 逐项评估过 LangGraph 与 Google ADK：本题流程是线性的（感知 → 转移 → 策略 → 执行），用不上图编排；要持久化的只有 4 个标量字段，checkpointer 反而不如 20 行 SQLite 可当场查证；LangGraph 的 `interrupt` 是"暂停等人回答再继续本次执行"的审批语义，题目要的是"锁定 + 独立入口解锁"，形状不匹配；ADK 的 `before_tool_callback` 形状虽对，但其保证建立在"框架一定会在每次工具执行前触发回调"这一第三方实现细节上，我们无法自证。
+2. **可解释性是本题的评分方式**（现场指着代码问"这行为什么这么写"）。自写代码的每条约束都能指到具体函数：真正发消息的 `transport.send()` 全仓库只有一个调用点，可以 grep 当场证明；依赖框架则保证退化为"文档说它会被调用"。
+3. **攻击面最小**：一处 LLM 分类调用、一个 executor 出口、一条持久化路径；升级为锁定态后连 LLM 都不调用，prompt injection 的输入面为零。
+4. **依赖只有 3 个**（`google-genai` / `pydantic` / `python-dotenv`），全部锁定版本，无供应链面扩大。
+
+代价（诚实说明）：编排、重试、结构化输出校验都自己写（`_attempt()` 有界重试 + `finish_reason`/Pydantic 四步校验链）；若题目换成多节点、循环、多 agent 协作的复杂场景，这个选型会重新评估。
+
 ## 四条硬约束在哪里强制
 
-| 约束 | 强制位置 | 机制 |
-|---|---|---|
-| 任意滚动 60 秒最多发送 1 条 | `store.py::reserve_send()`，由 `executor.py::_reply()` 调用 | SQLite `BEGIN IMMEDIATE` 原子检查并预留；被拒请求不延长窗口 |
-| 连续两次异常强制转人工 | `state_machine.py::transition()` | `irrelevant OR dissatisfied` 共用计数器；一条消息最多 +1；达到 2 强制覆盖模型建议 |
-| 只允许四种动作，转人工后静默 | `domain.py` + `service.py` pre-gate + `executor.py` 二次 gate | 严格枚举、无动态 dispatch；ESCALATED/CLOSED 下不调用 LLM，executor 也拒绝状态不匹配动作 |
-| 防套取内部信息 | 两次 LLM 调用隔离 + `executor.py` 出站 canary | 模型上下文不含价格底线等秘密；canary 挡完整原样复述；语义改写只能 best-effort |
+结论先说：**四条约束全部由自写代码强制，不依赖任何框架能力**。唯一借用的第三方保证是 Pydantic 的 schema 校验（本地校验，失败即 fail-closed）与 SQLite 事务的原子性（标准库），二者都不构成对框架运行时行为的信任。
+
+| 约束 | 强制位置 | 机制 | 框架能力还是自写？ |
+|---|---|---|---|
+| 任意滚动 60 秒最多发送 1 条 | `store.py::reserve_send()`，由 `executor.py::_reply()` 调用 | SQLite `BEGIN IMMEDIATE` 原子检查并预留；被拒请求不延长窗口 | 自写。无框架提供滚动窗口；check 与写入在同一事务内，防并发重复发送 |
+| 连续两次异常强制转人工 | `state_machine.py::transition()` | `irrelevant OR dissatisfied` 共用计数器；一条消息最多 +1；达到 2 强制覆盖模型建议 | 自写。纯函数无 IO，触发不依赖 LLM 输出意愿；不用任何框架的 HITL 钩子 |
+| 只允许四种动作，转人工后静默 | `domain.py` + `service.py` pre-gate + `executor.py` 二次 gate | 严格枚举、无动态 dispatch；ESCALATED/CLOSED 下不调用 LLM，executor 也拒绝状态不匹配动作 | 自写 + Pydantic 枚举校验。白名单靠"第 5 个处理函数不存在"这一代码事实，而非框架工具注册 |
+| 防套取内部信息 | 两次 LLM 调用隔离 + `executor.py` 出站 canary | 模型上下文不含价格底线等秘密；canary 挡完整原样复述；语义改写只能 best-effort | 自写 + 架构取舍（最小知识）。题目明说此类无法 100%，边界：原样复述必被拦，转述只能缓解 |
 
 完整威胁边界与落地后的修正记录在本地 `docs/` 设计文档中（该目录未随本仓库发布，四条约束的证明以本 README 的测试与 `tests/` 为准）。
 
