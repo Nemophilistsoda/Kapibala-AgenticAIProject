@@ -345,38 +345,38 @@
   <aside class="sidebar">
     <div class="tabs">
       <button class="tab active" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
-        首页
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">        <path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        <span data-i18n="home">首页</span>
       </button>
       <button class="tab" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13.5 5-3 14"/></svg>
-        代码
+        <span data-i18n="code">代码</span>
       </button>
     </div>
 
     <button class="nav-item selected" type="button">
       <svg class="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      新建
+      <span data-i18n="new">新建</span>
     </button>
     <button class="nav-item" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-      项目
+      <span data-i18n="projects">项目</span>
     </button>
     <button class="nav-item" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9l4-6z"/><path d="M2 9h20M9 3l3 6 3-6M12 21 9 9m6 0-3 12"/></svg>
-      Artifacts
+      <span data-i18n="artifacts">Artifacts</span>
     </button>
     <button class="nav-item" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-      计划任务
+      <span data-i18n="tasks">计划任务</span>
     </button>
     <button class="nav-item" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-      自定义
+      <span data-i18n="customize">自定义</span>
     </button>
 
     <div class="nav-divider">
-      <span>Chats and tasks &gt;</span>
+      <span data-i18n="chatsDivider">Chats and tasks &gt;</span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/></svg>
     </div>
 
@@ -384,12 +384,12 @@
 
     <button class="nav-item" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>
-      设置
+      <span data-i18n="settings">设置</span>
     </button>
     <div class="user-row">
       <div class="avatar">D</div>
       <span class="user-name" id="userLogin">demo-customer</span>
-      <span class="user-tag">· 演示版</span>
+      <span class="user-tag" data-i18n="demoTag">· 演示版</span>
       <span class="grow" style="flex:1"></span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L7 8m5-5 5 5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
@@ -515,13 +515,19 @@
   var I18N = {
     zh: { title: "获客初筛", subtitle: "今天有什么我可以帮您的？", placeholder: "输入客户消息…", chip: "聊天",
           state: "SESSION STATE", counter: "ANOMALY COUNTER", last: "LAST ACTION", log: "EVENT LOG", op: "OPERATOR",
-          count: "COUNT", reactivate: "⟳ 重新激活会话", clear: "✕ 清空显示" },
+          count: "COUNT", reactivate: "⟳ 重新激活会话", clear: "✕ 清空显示",
+          home: "首页", code: "代码", "new": "新建", projects: "项目", artifacts: "Artifacts",
+          tasks: "计划任务", customize: "自定义", chatsDivider: "Chats and tasks >", settings: "设置", demoTag: "· 演示版" },
     en: { title: "Lead Qualifier", subtitle: "How can I help you today?", placeholder: "Type a customer message…", chip: "Chat",
           state: "SESSION STATE", counter: "ANOMALY COUNTER", last: "LAST ACTION", log: "EVENT LOG", op: "OPERATOR",
-          count: "COUNT", reactivate: "⟳ Reactivate session", clear: "✕ Clear display" },
+          count: "COUNT", reactivate: "⟳ Reactivate session", clear: "✕ Clear display",
+          home: "Home", code: "Code", "new": "New", projects: "Projects", artifacts: "Artifacts",
+          tasks: "Tasks", customize: "Customize", chatsDivider: "Chats and tasks >", settings: "Settings", demoTag: "· Demo" },
     ja: { title: "リードスクリーニング", subtitle: "本日はどのようなご用件でしょうか？", placeholder: "お客様のメッセージを入力…", chip: "チャット",
           state: "セッション状態", counter: "異常カウンター", last: "最後のアクション", log: "イベントログ", op: "オペレーター",
-          count: "回数", reactivate: "⟳ セッションを再アクティブ化", clear: "✕ 表示をクリア" }
+          count: "回数", reactivate: "⟳ セッションを再アクティブ化", clear: "✕ 表示をクリア",
+          home: "ホーム", code: "コード", "new": "新規", projects: "プロジェクト", artifacts: "アーティファクト",
+          tasks: "タスク", customize: "カスタマイズ", chatsDivider: "チャットとタスク >", settings: "設定", demoTag: "· デモ版" }
   };
 
   function applyI18n(lang) {
@@ -538,6 +544,11 @@
     lblCount.textContent = t.count;
     reactivateBtn.textContent = t.reactivate;
     clearBtn.textContent = t.clear;
+    /* 左侧导航等装饰性文案：统一走 data-i18n 标记 */
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      var v = t[el.getAttribute("data-i18n")];
+      if (v !== undefined) el.textContent = v;
+    });
     document.documentElement.lang = lang === "zh" ? "zh-CN" : lang;
     try { localStorage.setItem("kb-lang", lang); } catch (e) { /* 隐私模式等场景静默忽略 */ }
   }
