@@ -4,13 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>KapibalaAI — 获客初筛 Agent</title>
-<!-- 字体：英文 EB Garamond（Garamond 开源版），中文 思源宋体 Noto Serif SC Light(300)。
-     本机装了 Adobe Garamond / 思源宋体时优先用本地版；CDN 挂了回退 Georgia/系统字体 -->
+<!-- 字体：英文 Times New Roman 斜体+加粗（系统自带）；中文 思源宋体 Noto Serif SC
+     （ upright 不随英文倾斜，靠 font-synthesis-style:none 实现）。
+     本机装了 Adobe 字体/思源宋体时优先本地版；CDN 挂了回退 Georgia/系统字体 -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/eb-garamond@latest/400.css" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/eb-garamond@latest/600.css" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@latest/300.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@latest/400.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@latest/700.css" />
 <!--
   KapibalaAI 前端（单文件，Claude 桌面暗色风格，无构建步骤，无 mock）
   后端：uv run kapibala-agent serve 后访问 http://127.0.0.1:8000/
@@ -25,16 +24,16 @@
     --bg-hover: #2a2a2a;
     --border: #333333;
     --border-soft: #2a2a2a;
-    --text: #e8e8e8;
-    --text-2: #8a8a8a;
+    --text: #f5f3ee;
+    --text-2: #9a958d;
     --text-3: #555555;
     --brand: #c96442;
     --warn: #c0392b;
     --amber: #e8a020;
     --user-bubble: #2f2f2f;
     --user-bubble-border: #3a3a3a;
-    --font-body: "Garamond", "EB Garamond", "Noto Serif SC", "Source Han Serif SC", Georgia, "PingFang SC", "Microsoft YaHei", serif;
-    --font-label: "Garamond", "EB Garamond", "Noto Serif SC", Georgia, serif;
+    --font-body: "Times New Roman", Georgia, "Noto Serif SC", "Source Han Serif SC", "PingFang SC", "Microsoft YaHei", serif;
+    --font-label: "Times New Roman", Georgia, "Noto Serif SC", serif;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -44,7 +43,12 @@
     color: var(--text);
     font-family: var(--font-body);
     font-size: 15px;
-    font-weight: 300;
+    /* 英文：Times New Roman 斜体（系统自带真斜体面），常规粗细——太粗反而难读。
+       font-synthesis-style:none 关掉样式合成——思源宋体没有斜体面，
+       这样汉字不会跟着被假斜体歪掉，保持直立。 */
+    font-style: italic;
+    font-weight: 400;
+    font-synthesis-style: none;
     display: flex;
   }
 
@@ -148,8 +152,9 @@
   .msg.user { display: flex; justify-content: flex-end; }
   .msg.user .bubble {
     max-width: 70%;
-    background: var(--user-bubble);
-    border: 1px solid var(--user-bubble-border);
+    background: var(--brand);
+    border: 1px solid #b85a3a;
+    color: #ffffff;
     border-radius: 18px;
     padding: 12px 18px;
     font-size: 16px;
@@ -257,6 +262,22 @@
     display: flex; flex-direction: column;
     overflow: hidden;
   }
+  .lang-section { padding: 10px 16px; }
+  .lang-sel {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-2);
+    font-family: var(--font-label);
+    font-size: 12px;
+    padding: 5px 8px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 150ms ease, color 150ms ease;
+  }
+  .lang-sel:hover, .lang-sel:focus { border-color: var(--text-3); color: var(--text); }
+  .lang-sel option { background: var(--bg); color: var(--text); }
   .panel-section { padding: 14px 16px; border-bottom: 1px solid var(--border-soft); }
   .section-title {
     font-size: 12px; color: var(--text-3);
@@ -380,8 +401,8 @@
     <div class="flex-spacer" aria-hidden="true"></div>
 
     <div class="welcome" id="welcome">
-      <h1><span class="mark">✳</span> KapibalaAI 获客初筛</h1>
-      <p>今天有什么我可以帮您的？</p>
+      <h1><span class="mark">✳</span> KapibalaAI <span id="titleText">获客初筛</span></h1>
+      <p id="welcomeSubtitle">今天有什么我可以帮您的？</p>
     </div>
 
     <div class="messages" id="messages">
@@ -395,7 +416,7 @@
           <button class="icon-mini" type="button" title="装饰按钮">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
-          <span class="chip">聊天</span>
+          <span class="chip" id="chipLabel">聊天</span>
           <input class="cust-input" id="custId" value="demo-customer" spellcheck="false" title="customer_id" />
           <span class="grow"></span>
           <span class="model-tag">gemini-flash</span>
@@ -411,15 +432,22 @@
 
   <!-- ============ 右侧系统面板 ============ -->
   <aside class="sys-panel">
+    <div class="panel-section lang-section">
+      <select class="lang-sel" id="langSel" title="UI language / 界面语言">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+      </select>
+    </div>
     <div class="panel-section">
-      <div class="section-title">SESSION STATE</div>
+      <div class="section-title" id="stState">SESSION STATE</div>
       <div class="state-value" id="stateValue">ACTIVE</div>
     </div>
 
     <div class="panel-section">
-      <div class="section-title">ANOMALY COUNTER</div>
+      <div class="section-title" id="stCounter">ANOMALY COUNTER</div>
       <div class="meter-row">
-        <span class="meter-label">COUNT</span>
+        <span class="meter-label" id="lblCount">COUNT</span>
         <span class="meter-num" id="anomalyVal">0</span>
       </div>
       <div class="pixel-bar">
@@ -427,17 +455,18 @@
         <div class="seg" id="seg1"></div>
       </div>
 
-      <div class="section-title">LAST ACTION</div>
+      <div class="section-title" id="stLast">LAST ACTION</div>
       <div class="last-action" id="lastAction">—</div>
       <div class="last-reason" id="lastReason"></div>
     </div>
 
     <div class="panel-section log-section">
-      <div class="section-title">EVENT LOG</div>
+      <div class="section-title" id="stLog">EVENT LOG</div>
       <div class="mini-log" id="miniLog"></div>
     </div>
 
     <div class="panel-section operator-section">
+      <div class="section-title" id="stOp">OPERATOR</div>
       <button class="op-btn reactivate" id="reactivateBtn" type="button">⟳ Reactivate Session</button>
       <button class="op-btn clear" id="clearBtn" type="button">✕ Clear Display</button>
     </div>
@@ -471,6 +500,53 @@
   var seg1       = document.getElementById("seg1");
   var reactivateBtn = document.getElementById("reactivateBtn");
   var clearBtn   = document.getElementById("clearBtn");
+  var langSel    = document.getElementById("langSel");
+  var titleText  = document.getElementById("titleText");
+  var welcomeSubtitle = document.getElementById("welcomeSubtitle");
+  var chipLabel  = document.getElementById("chipLabel");
+  var stState    = document.getElementById("stState");
+  var stCounter  = document.getElementById("stCounter");
+  var stLast     = document.getElementById("stLast");
+  var stLog      = document.getElementById("stLog");
+  var stOp       = document.getElementById("stOp");
+  var lblCount   = document.getElementById("lblCount");
+
+  /* ---- UI 多语言：只翻译界面文案，不参与任何决策逻辑 ---- */
+  var I18N = {
+    zh: { title: "获客初筛", subtitle: "今天有什么我可以帮您的？", placeholder: "输入客户消息…", chip: "聊天",
+          state: "SESSION STATE", counter: "ANOMALY COUNTER", last: "LAST ACTION", log: "EVENT LOG", op: "OPERATOR",
+          count: "COUNT", reactivate: "⟳ 重新激活会话", clear: "✕ 清空显示" },
+    en: { title: "Lead Qualifier", subtitle: "How can I help you today?", placeholder: "Type a customer message…", chip: "Chat",
+          state: "SESSION STATE", counter: "ANOMALY COUNTER", last: "LAST ACTION", log: "EVENT LOG", op: "OPERATOR",
+          count: "COUNT", reactivate: "⟳ Reactivate session", clear: "✕ Clear display" },
+    ja: { title: "リードスクリーニング", subtitle: "本日はどのようなご用件でしょうか？", placeholder: "お客様のメッセージを入力…", chip: "チャット",
+          state: "セッション状態", counter: "異常カウンター", last: "最後のアクション", log: "イベントログ", op: "オペレーター",
+          count: "回数", reactivate: "⟳ セッションを再アクティブ化", clear: "✕ 表示をクリア" }
+  };
+
+  function applyI18n(lang) {
+    var t = I18N[lang] || I18N.zh;
+    titleText.textContent = t.title;
+    welcomeSubtitle.textContent = t.subtitle;
+    msgInput.placeholder = t.placeholder;
+    chipLabel.textContent = t.chip;
+    stState.textContent = t.state;
+    stCounter.textContent = t.counter;
+    stLast.textContent = t.last;
+    stLog.textContent = t.log;
+    stOp.textContent = t.op;
+    lblCount.textContent = t.count;
+    reactivateBtn.textContent = t.reactivate;
+    clearBtn.textContent = t.clear;
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : lang;
+    try { localStorage.setItem("kb-lang", lang); } catch (e) { /* 隐私模式等场景静默忽略 */ }
+  }
+
+  var savedLang = "zh";
+  try { savedLang = localStorage.getItem("kb-lang") || "zh"; } catch (e) { /* 忽略 */ }
+  langSel.value = savedLang;
+  applyI18n(savedLang);
+  langSel.addEventListener("change", function () { applyI18n(langSel.value); });
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
